@@ -10,6 +10,7 @@ def test_config_defaults():
     assert cfg.ph == 7.2
     assert cfg.mode == "both"
     assert cfg.ligand_name == "LIG1"
+    assert cfg.minimize_solvent == "explicit"
 
 
 def test_bad_extension_fails():

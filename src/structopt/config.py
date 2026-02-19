@@ -14,11 +14,12 @@ class OptimizationConfig(BaseModel):
     mode: Literal["minimize", "refine", "both"] = "both"
     ph: float = Field(default=7.2, ge=0.0, le=14.0)
 
-    ligand_name: str | None = None
+    ligand_name: str | None = "LIG1"
     ligand_sdf: Path | None = None
     gaff_forcefield: str = "gaff-2.11"
     log_level: Literal["debug", "info", "warning", "error"] = "info"
 
+    minimize_solvent: Literal["explicit", "implicit"] = "explicit"
     implicit_solvent: Literal["gbn2", "obc2"] = "gbn2"
     minimize_max_iter: int = Field(default=10000, ge=1)
 

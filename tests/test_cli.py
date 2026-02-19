@@ -47,3 +47,4 @@ def test_cli_optimize_parsing(monkeypatch):
     assert "Output:" in result.stdout
     assert called["cfg"].mode == "minimize"
     assert called["cfg"].ph == 6.8
+    assert called["cfg"].minimize_solvent == "explicit"

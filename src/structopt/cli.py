@@ -49,6 +49,9 @@ def optimize(
         str,
         typer.Option(help="Logging verbosity: debug, info, warning, error."),
     ] = "info",
+    minimize_solvent: Annotated[
+        str, typer.Option(help="Minimization solvent model: explicit or implicit.")
+    ] = "explicit",
     implicit_solvent: Annotated[
         str, typer.Option(help="Implicit solvent model for minimization.")
     ] = "gbn2",
@@ -85,6 +88,7 @@ def optimize(
             ligand_name=ligand_name,
             ligand_sdf=ligand_sdf,
             log_level=log_level.lower(),
+            minimize_solvent=minimize_solvent,
             implicit_solvent=implicit_solvent,
             minimize_max_iter=minimize_max_iter,
             temperature_k=temperature,

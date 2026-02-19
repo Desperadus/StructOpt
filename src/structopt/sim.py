@@ -28,6 +28,9 @@ class SimulationState:
     potential_energy_kj_mol: float
 
 
+WATER_RESNAMES = {"HOH", "WAT", "TIP3", "TIP3P", "SOL"}
+
+
 def _platform_for_device(
     device: Literal["auto", "cpu", "cuda", "opencl"],
 ) -> tuple[mm.Platform | None, dict]:
@@ -96,10 +99,11 @@ def _add_backbone_restraints(
 
 def run_minimization(config: OptimizationConfig, modeller: Modeller) -> SimulationState:
     ff_files = ["amber14/protein.ff14SB.xml", "amber14/tip3p.xml"]
-    if config.implicit_solvent == "gbn2":
-        ff_files.append("implicit/gbn2.xml")
-    else:
-        ff_files.append("implicit/obc2.xml")
+    if config.minimize_solvent == "implicit":
+        if config.implicit_solvent == "gbn2":
+            ff_files.append("implicit/gbn2.xml")
+        else:
+            ff_files.append("implicit/obc2.xml")
 
     ff = ForceField(*ff_files)
     ligand_registered = register_gaff_template(ff, config, modeller.topology, modeller.positions)
@@ -107,17 +111,41 @@ def run_minimization(config: OptimizationConfig, modeller: Modeller) -> Simulati
         LOGGER.info("Adding any remaining hydrogens using registered force field templates")
         modeller.addHydrogens(ff, pH=config.ph)
 
-    LOGGER.info(
-        "Creating minimization system with implicit solvent=%s and cutoff=%.3f nm",
-        config.implicit_solvent,
-        config.nonbonded_cutoff_nm,
-    )
-    system = ff.createSystem(
-        modeller.topology,
-        nonbondedMethod=CutoffNonPeriodic,
-        nonbondedCutoff=config.nonbonded_cutoff_nm * unit.nanometer,
-        constraints=HBonds,
-    )
+    if config.minimize_solvent == "explicit":
+        LOGGER.info(
+            "Adding solvent for minimization (padding=%.3f nm, ionic_strength=%.3f M)",
+            config.solvent_padding_nm,
+            config.ionic_strength_molar,
+        )
+        modeller.addSolvent(
+            ff,
+            model="tip3p",
+            padding=config.solvent_padding_nm * unit.nanometer,
+            ionicStrength=config.ionic_strength_molar * unit.molar,
+            neutralize=True,
+        )
+        LOGGER.info(
+            "Creating minimization system with explicit solvent and cutoff=%.3f nm",
+            config.nonbonded_cutoff_nm,
+        )
+        system = ff.createSystem(
+            modeller.topology,
+            nonbondedMethod=PME,
+            nonbondedCutoff=config.nonbonded_cutoff_nm * unit.nanometer,
+            constraints=HBonds,
+        )
+    else:
+        LOGGER.info(
+            "Creating minimization system with implicit solvent=%s and cutoff=%.3f nm",
+            config.implicit_solvent,
+            config.nonbonded_cutoff_nm,
+        )
+        system = ff.createSystem(
+            modeller.topology,
+            nonbondedMethod=CutoffNonPeriodic,
+            nonbondedCutoff=config.nonbonded_cutoff_nm * unit.nanometer,
+            constraints=HBonds,
+        )
 
     sim = _create_simulation(system, modeller, config)
     LOGGER.info("Running energy minimization (max_iterations=%d)", config.minimize_max_iter)
@@ -138,18 +166,23 @@ def run_refinement_npt(config: OptimizationConfig, modeller: Modeller) -> Simula
         LOGGER.info("Adding any remaining hydrogens using registered force field templates")
         modeller.addHydrogens(ff, pH=config.ph)
 
-    LOGGER.info(
-        "Adding solvent for NPT refinement (padding=%.3f nm, ionic_strength=%.3f M)",
-        config.solvent_padding_nm,
-        config.ionic_strength_molar,
-    )
-    modeller.addSolvent(
-        ff,
-        model="tip3p",
-        padding=config.solvent_padding_nm * unit.nanometer,
-        ionicStrength=config.ionic_strength_molar * unit.molar,
-        neutralize=True,
-    )
+    if any(res.name in WATER_RESNAMES for res in modeller.topology.residues()):
+        LOGGER.info(
+            "Detected existing solvent in topology; skipping solvent addition for refinement"
+        )
+    else:
+        LOGGER.info(
+            "Adding solvent for NPT refinement (padding=%.3f nm, ionic_strength=%.3f M)",
+            config.solvent_padding_nm,
+            config.ionic_strength_molar,
+        )
+        modeller.addSolvent(
+            ff,
+            model="tip3p",
+            padding=config.solvent_padding_nm * unit.nanometer,
+            ionicStrength=config.ionic_strength_molar * unit.molar,
+            neutralize=True,
+        )
     system = ff.createSystem(
         modeller.topology,
         nonbondedMethod=PME,

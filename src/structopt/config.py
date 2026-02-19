@@ -14,13 +14,13 @@ class OptimizationConfig(BaseModel):
     mode: Literal["minimize", "refine", "both"] = "both"
     ph: float = Field(default=7.2, ge=0.0, le=14.0)
 
-    ligand_name: str = "LIG1"
+    ligand_name: str | None = None
     ligand_sdf: Path | None = None
     gaff_forcefield: str = "gaff-2.11"
     log_level: Literal["debug", "info", "warning", "error"] = "info"
 
     implicit_solvent: Literal["gbn2", "obc2"] = "gbn2"
-    minimize_max_iter: int = Field(default=5000, ge=1)
+    minimize_max_iter: int = Field(default=10000, ge=1)
 
     temperature_k: float = Field(default=300.0, gt=0.0)
     pressure_bar: float = Field(default=1.0, gt=0.0)
@@ -28,7 +28,7 @@ class OptimizationConfig(BaseModel):
     friction_per_ps: float = Field(default=1.0, gt=0.0)
     equil_steps: int = Field(default=5000, ge=0)
     npt_steps: int = Field(default=50000, ge=0)
-    report_interval: int = Field(default=1000, ge=1)
+    report_interval: int = Field(default=100, ge=1)
     restraint_k_kcal_per_a2: float = Field(default=1.0, ge=0.0)
     random_seed: int | None = None
 

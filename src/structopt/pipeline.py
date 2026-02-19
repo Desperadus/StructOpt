@@ -10,6 +10,32 @@ from structopt.prep import prepare_structure, validate_input_exists
 
 LOGGER = logging.getLogger(__name__)
 
+WATER_RESNAMES = {"HOH", "WAT", "TIP3", "TIP3P", "SOL"}
+ION_RESNAMES = {
+    "NA",
+    "NA+",
+    "K",
+    "K+",
+    "CL",
+    "CL-",
+    "LI",
+    "LI+",
+    "CS",
+    "CS+",
+    "RB",
+    "RB+",
+    "MG",
+    "MG2+",
+    "CA",
+    "CA2+",
+    "ZN",
+    "ZN2+",
+    "FE",
+    "FE2+",
+    "FE3+",
+}
+SOLVENT_ION_RESNAMES = WATER_RESNAMES | ION_RESNAMES
+
 
 @dataclass
 class OptimizationResult:
@@ -23,6 +49,21 @@ def _modeller_from_state(state: object) -> object:
     from openmm.app import Modeller
 
     return Modeller(state.topology, state.positions)
+
+
+def _strip_solvent_and_ions(topology: object, positions: object) -> tuple[object, object]:
+    from openmm.app import Modeller
+
+    modeller = Modeller(topology, positions)
+    residues_to_strip = [
+        residue
+        for residue in modeller.topology.residues()
+        if residue.name.upper() in SOLVENT_ION_RESNAMES
+    ]
+    if residues_to_strip:
+        LOGGER.info("Stripping %d solvent/ion residues from output structure", len(residues_to_strip))
+        modeller.delete(residues_to_strip)
+    return modeller.topology, modeller.positions
 
 
 def run_optimization(config: OptimizationConfig) -> OptimizationResult:
@@ -62,7 +103,11 @@ def run_optimization(config: OptimizationConfig) -> OptimizationResult:
     else:
         raise RuntimeError("No simulation state produced. Check optimization mode.")
 
-    write_structure(output_path, final_state.topology, final_state.positions, output_format)
+    output_topology, output_positions = _strip_solvent_and_ions(
+        final_state.topology,
+        final_state.positions,
+    )
+    write_structure(output_path, output_topology, output_positions, output_format)
     LOGGER.info("Wrote optimized structure to: %s", output_path)
 
     return OptimizationResult(

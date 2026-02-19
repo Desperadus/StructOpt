@@ -69,34 +69,6 @@ def _create_simulation(
     return sim
 
 
-def _add_backbone_restraints(
-    system: mm.System,
-    modeller: Modeller,
-    k_kcal_per_a2: float,
-) -> None:
-    if k_kcal_per_a2 <= 0.0:
-        return
-    restraint = mm.CustomExternalForce("k*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
-    restraint.addGlobalParameter(
-        "k", k_kcal_per_a2 * unit.kilocalories_per_mole / (unit.angstroms**2)
-    )
-    restraint.addPerParticleParameter("x0")
-    restraint.addPerParticleParameter("y0")
-    restraint.addPerParticleParameter("z0")
-
-    for atom in modeller.topology.atoms():
-        if atom.name not in {"N", "CA", "C", "O"}:
-            continue
-        if atom.residue.name in {"HOH", "WAT"}:
-            continue
-        idx = atom.index
-        pos = modeller.positions[idx]
-        restraint.addParticle(idx, [pos.x, pos.y, pos.z])
-
-    if restraint.getNumParticles() > 0:
-        system.addForce(restraint)
-
-
 def run_minimization(config: OptimizationConfig, modeller: Modeller) -> SimulationState:
     ff_files = ["amber14/protein.ff14SB.xml", "amber14/tip3p.xml"]
     if config.minimize_solvent == "implicit":
@@ -188,6 +160,7 @@ def run_refinement_npt(config: OptimizationConfig, modeller: Modeller) -> Simula
         nonbondedMethod=PME,
         nonbondedCutoff=config.nonbonded_cutoff_nm * unit.nanometer,
         constraints=HBonds,
+        hydrogenMass=1.5*unit.amu,
     )
     system.addForce(
         mm.MonteCarloBarostat(
@@ -195,9 +168,21 @@ def run_refinement_npt(config: OptimizationConfig, modeller: Modeller) -> Simula
             config.temperature_k * unit.kelvin,
         )
     )
-    _add_backbone_restraints(system, modeller, config.restraint_k_kcal_per_a2)
 
     sim = _create_simulation(system, modeller, config)
+    # Re-relax the exact NPT system (restraints/barostat/constraints) before dynamics.
+    LOGGER.info(
+        "Running pre-refinement minimization (max_iterations=%d)", config.minimize_max_iter
+    )
+    sim.minimizeEnergy(maxIterations=config.minimize_max_iter)
+
+    if config.random_seed is not None:
+        sim.context.setVelocitiesToTemperature(
+            config.temperature_k * unit.kelvin, config.random_seed
+        )
+    else:
+        sim.context.setVelocitiesToTemperature(config.temperature_k * unit.kelvin)
+
     if config.equil_steps > 0:
         LOGGER.info("Running equilibration steps: %d", config.equil_steps)
         sim.step(config.equil_steps)

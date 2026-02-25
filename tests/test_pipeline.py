@@ -198,3 +198,131 @@ def test_run_optimization_strips_explicit_solvent_before_implicit_refine(monkeyp
     # The modeller handed to run_refinement_npt must have stripped topology/positions
     assert refinement_received["modeller"].topology == "stripped-topology"
     assert refinement_received["modeller"].positions == "stripped-positions"
+
+
+def _make_fake_sim_module(minimized_state, refined_state, post_minimized_state=None):
+    """Build a fake structopt.sim module whose run_minimization returns different states
+    for the initial call vs the post-refinement call."""
+    call_counts = {"minimize": 0}
+    states = [minimized_state]
+    if post_minimized_state is not None:
+        states.append(post_minimized_state)
+
+    def fake_minimize(_cfg, _modeller):
+        idx = min(call_counts["minimize"], len(states) - 1)
+        call_counts["minimize"] += 1
+        return states[idx]
+
+    class FakeSimulationState:
+        def __init__(self, topology, positions, potential_energy_kj_mol):
+            self.topology = topology
+            self.positions = positions
+            self.potential_energy_kj_mol = potential_energy_kj_mol
+
+    fake_sim = ModuleType("structopt.sim")
+    fake_sim.run_minimization = fake_minimize
+    fake_sim.run_refinement_npt = lambda _cfg, _modeller: refined_state
+    fake_sim.SimulationState = FakeSimulationState
+    return fake_sim
+
+
+def test_post_refinement_minimization_is_run_after_md(monkeypatch, tmp_path):
+    """After MD refinement the pipeline strips the refined state and re-runs minimization
+    in minimize_solvent.  The result's post_refined_energy_kj_mol must reflect that final
+    minimization energy, and it should be the final_energy."""
+    cfg = OptimizationConfig(
+        input_path=Path("tests/data/OBP5_model_0.cif"),
+        output_path=tmp_path / "optimized.cif",
+        mode="both",
+        minimize_solvent="explicit",
+        refine_solvent="explicit",
+        equil_steps=1,
+    )
+
+    minimized_state = type(
+        "State", (), {"topology": "t-min", "positions": "p-min", "potential_energy_kj_mol": -10.0}
+    )()
+    refined_state = type(
+        "State", (), {"topology": "t-ref", "positions": "p-ref", "potential_energy_kj_mol": -15.0}
+    )()
+    post_min_state = type(
+        "State", (), {"topology": "t-post", "positions": "p-post", "potential_energy_kj_mol": -18.0}
+    )()
+
+    fake_sim = _make_fake_sim_module(minimized_state, refined_state, post_min_state)
+    monkeypatch.setitem(sys.modules, "structopt.sim", fake_sim)
+
+    monkeypatch.setattr("structopt.pipeline.validate_input_exists", lambda _path: None)
+    monkeypatch.setattr("structopt.pipeline.detect_input_format", lambda _path: "cif")
+    monkeypatch.setattr("structopt.pipeline.prepare_structure", lambda _cfg: "prepared-modeller")
+    monkeypatch.setattr(
+        "structopt.pipeline._strip_solvent_and_ions",
+        lambda _topology, _positions: ("dry-topology", "dry-positions"),
+    )
+
+    openmm_module = ModuleType("openmm")
+    openmm_app_module = ModuleType("openmm.app")
+
+    class FakeModeller:
+        def __init__(self, topology, positions):
+            self.topology = topology
+            self.positions = positions
+
+    openmm_app_module.Modeller = FakeModeller
+    openmm_module.app = openmm_app_module
+    monkeypatch.setitem(sys.modules, "openmm", openmm_module)
+    monkeypatch.setitem(sys.modules, "openmm.app", openmm_app_module)
+
+    monkeypatch.setattr("structopt.pipeline.write_structure", lambda *a, **kw: None)
+
+    result = run_optimization(cfg)
+
+    assert result.minimized_energy_kj_mol == -10.0
+    assert result.refined_energy_kj_mol == -15.0
+    assert result.post_refined_energy_kj_mol == -18.0
+    assert result.final_energy_kj_mol == -18.0
+
+
+def test_post_refinement_minimization_not_run_for_minimize_only(monkeypatch, tmp_path):
+    """mode=minimize must not trigger a post-refinement minimization."""
+    cfg = OptimizationConfig(
+        input_path=Path("tests/data/OBP5_model_0.cif"),
+        output_path=tmp_path / "optimized.cif",
+        mode="minimize",
+    )
+
+    minimize_calls = {"n": 0}
+
+    def fake_minimize(_cfg, _modeller):
+        minimize_calls["n"] += 1
+        return type(
+            "State", (), {"topology": "t", "positions": "p", "potential_energy_kj_mol": -5.0}
+        )()
+
+    class FakeSimulationState:
+        def __init__(self, topology, positions, potential_energy_kj_mol):
+            self.topology = topology
+            self.positions = positions
+            self.potential_energy_kj_mol = potential_energy_kj_mol
+
+    fake_sim = ModuleType("structopt.sim")
+    fake_sim.run_minimization = fake_minimize
+    fake_sim.run_refinement_npt = lambda _cfg, _modeller: None
+    fake_sim.SimulationState = FakeSimulationState
+    monkeypatch.setitem(sys.modules, "structopt.sim", fake_sim)
+
+    monkeypatch.setattr("structopt.pipeline.validate_input_exists", lambda _path: None)
+    monkeypatch.setattr("structopt.pipeline.detect_input_format", lambda _path: "cif")
+    monkeypatch.setattr("structopt.pipeline.prepare_structure", lambda _cfg: "prepared-modeller")
+    monkeypatch.setattr(
+        "structopt.pipeline._strip_solvent_and_ions",
+        lambda _topology, _positions: ("dry-topology", "dry-positions"),
+    )
+    monkeypatch.setattr("structopt.pipeline.write_structure", lambda *a, **kw: None)
+
+    result = run_optimization(cfg)
+
+    assert minimize_calls["n"] == 1, (
+        "run_minimization should be called exactly once for mode=minimize"
+    )
+    assert result.post_refined_energy_kj_mol is None

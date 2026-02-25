@@ -116,6 +116,8 @@ def optimize(
         typer.echo(f"Minimized energy (kJ/mol): {result.minimized_energy_kj_mol:.3f}")
     if result.refined_energy_kj_mol is not None:
         typer.echo(f"Refined energy (kJ/mol): {result.refined_energy_kj_mol:.3f}")
+    if result.post_refined_energy_kj_mol is not None:
+        typer.echo(f"Post-refined energy (kJ/mol): {result.post_refined_energy_kj_mol:.3f}")
 
 
 def main() -> None:

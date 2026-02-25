@@ -43,6 +43,7 @@ class OptimizationResult:
     final_energy_kj_mol: float
     minimized_energy_kj_mol: float | None = None
     refined_energy_kj_mol: float | None = None
+    post_refined_energy_kj_mol: float | None = None
 
 
 def _modeller_from_state(state: object) -> object:
@@ -119,6 +120,26 @@ def run_optimization(config: OptimizationConfig) -> OptimizationResult:
     else:
         raise RuntimeError("No simulation state produced. Check optimization mode.")
 
+    # After MD refinement, run a final energy minimization in the same solvent as the
+    # initial minimization.  Strip any solvent/ions from the refined state first so
+    # run_minimization always starts from a clean (dry) structure and can re-add solvent
+    # as required by minimize_solvent.
+    post_minimized = None
+    if config.mode in {"refine", "both"}:
+        LOGGER.info(
+            "Running post-refinement minimization (minimize_solvent=%s)", config.minimize_solvent
+        )
+        dry_top, dry_pos = _strip_solvent_and_ions(final_state.topology, final_state.positions)
+        dry_modeller = _modeller_from_state(
+            SimulationState(
+                topology=dry_top,
+                positions=dry_pos,
+                potential_energy_kj_mol=final_state.potential_energy_kj_mol,
+            )
+        )
+        post_minimized = run_minimization(config, dry_modeller)
+        final_state = post_minimized
+
     output_topology, output_positions = _strip_solvent_and_ions(
         final_state.topology,
         final_state.positions,
@@ -131,4 +152,7 @@ def run_optimization(config: OptimizationConfig) -> OptimizationResult:
         final_energy_kj_mol=final_state.potential_energy_kj_mol,
         minimized_energy_kj_mol=minimized.potential_energy_kj_mol if minimized else None,
         refined_energy_kj_mol=refined.potential_energy_kj_mol if refined else None,
+        post_refined_energy_kj_mol=post_minimized.potential_energy_kj_mol
+        if post_minimized
+        else None,
     )

@@ -26,6 +26,7 @@ def test_cli_optimize_parsing(monkeypatch):
                 "final_energy_kj_mol": -1.0,
                 "minimized_energy_kj_mol": -2.0,
                 "refined_energy_kj_mol": -1.0,
+                "post_refined_energy_kj_mol": None,
             },
         )()
 
@@ -64,6 +65,7 @@ def test_cli_refine_solvent_implicit(monkeypatch):
                 "final_energy_kj_mol": -1.0,
                 "minimized_energy_kj_mol": None,
                 "refined_energy_kj_mol": None,
+                "post_refined_energy_kj_mol": None,
             },
         )()
 

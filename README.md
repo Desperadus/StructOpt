@@ -33,6 +33,13 @@ pip install -e .
 
 ## CLI
 
+Run the command below to see all the possible options you can have for your optimisation
+```bash
+uv run structopt optimize --help
+```
+
+
+Example:
 ```bash
 uv run structopt optimize tests/data/geraniol_model_0.cif
 ```

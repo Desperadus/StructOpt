@@ -48,3 +48,36 @@ def test_cli_optimize_parsing(monkeypatch):
     assert called["cfg"].mode == "minimize"
     assert called["cfg"].ph == 6.8
     assert called["cfg"].minimize_solvent == "explicit"
+    assert called["cfg"].refine_solvent == "explicit"
+
+
+def test_cli_refine_solvent_implicit(monkeypatch):
+    called = {}
+
+    def fake_run(config):
+        called["cfg"] = config
+        return type(
+            "Result",
+            (),
+            {
+                "output_path": Path("out.cif"),
+                "final_energy_kj_mol": -1.0,
+                "minimized_energy_kj_mol": None,
+                "refined_energy_kj_mol": None,
+            },
+        )()
+
+    monkeypatch.setattr("structopt.cli.run_optimization", fake_run)
+    result = runner.invoke(
+        app,
+        [
+            "optimize",
+            "tests/data/OBP5_model_0.cif",
+            "--mode",
+            "minimize",
+            "--refine-solvent",
+            "implicit",
+        ],
+    )
+    assert result.exit_code == 0
+    assert called["cfg"].refine_solvent == "implicit"

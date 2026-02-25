@@ -20,6 +20,7 @@ class OptimizationConfig(BaseModel):
     log_level: Literal["debug", "info", "warning", "error"] = "info"
 
     minimize_solvent: Literal["explicit", "implicit"] = "explicit"
+    refine_solvent: Literal["explicit", "implicit"] = "explicit"
     implicit_solvent: Literal["gbn2", "obc2"] = "gbn2"
     minimize_max_iter: int = Field(default=10000, ge=1)
 

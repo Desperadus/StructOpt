@@ -132,48 +132,71 @@ def run_minimization(config: OptimizationConfig, modeller: Modeller) -> Simulati
 
 
 def run_refinement_npt(config: OptimizationConfig, modeller: Modeller) -> SimulationState:
-    ff = ForceField("amber14/protein.ff14SB.xml", "amber14/tip3p.xml")
+    ff_files = ["amber14/protein.ff14SB.xml", "amber14/tip3p.xml"]
+    if config.refine_solvent == "implicit":
+        if config.implicit_solvent == "gbn2":
+            ff_files.append("implicit/gbn2.xml")
+        else:
+            ff_files.append("implicit/obc2.xml")
+
+    ff = ForceField(*ff_files)
     ligand_registered = register_gaff_template(ff, config, modeller.topology, modeller.positions)
     if ligand_registered:
         LOGGER.info("Adding any remaining hydrogens using registered force field templates")
         modeller.addHydrogens(ff, pH=config.ph)
 
-    if any(res.name in WATER_RESNAMES for res in modeller.topology.residues()):
+    if config.refine_solvent == "explicit":
+        if any(res.name in WATER_RESNAMES for res in modeller.topology.residues()):
+            LOGGER.info(
+                "Detected existing solvent in topology; skipping solvent addition for refinement"
+            )
+        else:
+            LOGGER.info(
+                "Adding solvent for NPT refinement (padding=%.3f nm, ionic_strength=%.3f M)",
+                config.solvent_padding_nm,
+                config.ionic_strength_molar,
+            )
+            modeller.addSolvent(
+                ff,
+                model="tip3p",
+                padding=config.solvent_padding_nm * unit.nanometer,
+                ionicStrength=config.ionic_strength_molar * unit.molar,
+                neutralize=True,
+            )
         LOGGER.info(
-            "Detected existing solvent in topology; skipping solvent addition for refinement"
+            "Creating refinement system with explicit solvent and cutoff=%.3f nm",
+            config.nonbonded_cutoff_nm,
+        )
+        system = ff.createSystem(
+            modeller.topology,
+            nonbondedMethod=PME,
+            nonbondedCutoff=config.nonbonded_cutoff_nm * unit.nanometer,
+            constraints=HBonds,
+            hydrogenMass=1.5 * unit.amu,
+        )
+        system.addForce(
+            mm.MonteCarloBarostat(
+                config.pressure_bar * unit.bar,
+                config.temperature_k * unit.kelvin,
+            )
         )
     else:
         LOGGER.info(
-            "Adding solvent for NPT refinement (padding=%.3f nm, ionic_strength=%.3f M)",
-            config.solvent_padding_nm,
-            config.ionic_strength_molar,
+            "Creating refinement system with implicit solvent=%s and cutoff=%.3f nm",
+            config.implicit_solvent,
+            config.nonbonded_cutoff_nm,
         )
-        modeller.addSolvent(
-            ff,
-            model="tip3p",
-            padding=config.solvent_padding_nm * unit.nanometer,
-            ionicStrength=config.ionic_strength_molar * unit.molar,
-            neutralize=True,
+        system = ff.createSystem(
+            modeller.topology,
+            nonbondedMethod=CutoffNonPeriodic,
+            nonbondedCutoff=config.nonbonded_cutoff_nm * unit.nanometer,
+            constraints=HBonds,
+            hydrogenMass=1.5 * unit.amu,
         )
-    system = ff.createSystem(
-        modeller.topology,
-        nonbondedMethod=PME,
-        nonbondedCutoff=config.nonbonded_cutoff_nm * unit.nanometer,
-        constraints=HBonds,
-        hydrogenMass=1.5*unit.amu,
-    )
-    system.addForce(
-        mm.MonteCarloBarostat(
-            config.pressure_bar * unit.bar,
-            config.temperature_k * unit.kelvin,
-        )
-    )
 
     sim = _create_simulation(system, modeller, config)
-    # Re-relax the exact NPT system (restraints/barostat/constraints) before dynamics.
-    LOGGER.info(
-        "Running pre-refinement minimization (max_iterations=%d)", config.minimize_max_iter
-    )
+    # Re-relax before dynamics.
+    LOGGER.info("Running pre-refinement minimization (max_iterations=%d)", config.minimize_max_iter)
     sim.minimizeEnergy(maxIterations=config.minimize_max_iter)
 
     if config.random_seed is not None:

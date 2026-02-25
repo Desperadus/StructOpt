@@ -61,7 +61,9 @@ def _strip_solvent_and_ions(topology: object, positions: object) -> tuple[object
         if residue.name.upper() in SOLVENT_ION_RESNAMES
     ]
     if residues_to_strip:
-        LOGGER.info("Stripping %d solvent/ion residues from output structure", len(residues_to_strip))
+        LOGGER.info(
+            "Stripping %d solvent/ion residues from output structure", len(residues_to_strip)
+        )
         modeller.delete(residues_to_strip)
     return modeller.topology, modeller.positions
 
@@ -76,7 +78,7 @@ def run_optimization(config: OptimizationConfig) -> OptimizationResult:
         output_format,
     )
 
-    from structopt.sim import run_minimization, run_refinement_npt
+    from structopt.sim import SimulationState, run_minimization, run_refinement_npt
 
     LOGGER.info(
         "Optimization settings: mode=%s, output=%s, ligand=%s, ligand_sdf=%s",
@@ -93,6 +95,20 @@ def run_optimization(config: OptimizationConfig) -> OptimizationResult:
         LOGGER.info("Running minimization stage")
         minimized = run_minimization(config, modeller)
         modeller = _modeller_from_state(minimized)
+        if (
+            config.mode == "both"
+            and config.minimize_solvent == "explicit"
+            and config.refine_solvent == "implicit"
+        ):
+            LOGGER.info("Stripping explicit solvent/ions before implicit-solvent refinement")
+            dry_top, dry_pos = _strip_solvent_and_ions(minimized.topology, minimized.positions)
+            modeller = _modeller_from_state(
+                SimulationState(
+                    topology=dry_top,
+                    positions=dry_pos,
+                    potential_energy_kj_mol=minimized.potential_energy_kj_mol,
+                )
+            )
 
     if config.mode in {"refine", "both"}:
         LOGGER.info("Running refinement stage")

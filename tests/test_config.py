@@ -11,9 +11,18 @@ def test_config_defaults():
     assert cfg.mode == "both"
     assert cfg.ligand_name == "LIG1"
     assert cfg.minimize_solvent == "explicit"
+    assert cfg.refine_solvent == "explicit"
 
 
-def test_bad_extension_fails():
+def test_refine_solvent_implicit():
+    cfg = OptimizationConfig(
+        input_path=Path("tests/data/OBP5_model_0.cif"),
+        refine_solvent="implicit",
+        implicit_solvent="obc2",
+    )
+    assert cfg.refine_solvent == "implicit"
+    assert cfg.implicit_solvent == "obc2"
+
     with pytest.raises(ValueError):
         OptimizationConfig(input_path=Path("bad.xyz"))
 

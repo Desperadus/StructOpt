@@ -31,16 +31,12 @@ def optimize(
         Path,
         typer.Argument(..., exists=True, readable=True, help="Input .pdb/.cif/.mmcif"),
     ],
-    mode: Annotated[
-        str, typer.Option(help="Optimization mode: minimize, refine, both.")
-    ] = "both",
+    mode: Annotated[str, typer.Option(help="Optimization mode: minimize, refine, both.")] = "both",
     output: Annotated[
         Path | None, typer.Option("--output", "-o", help="Output structure path.")
     ] = None,
     ph: Annotated[float, typer.Option(help="pH used to add hydrogens.")] = 7.2,
-    ligand_name: Annotated[
-        str, typer.Option(help="Ligand residue name in the topology.")
-    ] = "LIG1",
+    ligand_name: Annotated[str, typer.Option(help="Ligand residue name in the topology.")] = "LIG1",
     ligand_sdf: Annotated[
         Path | None,
         typer.Option(help="Optional ligand SDF file to help GAFF parametrization."),
@@ -51,6 +47,9 @@ def optimize(
     ] = "info",
     minimize_solvent: Annotated[
         str, typer.Option(help="Minimization solvent model: explicit or implicit.")
+    ] = "explicit",
+    refine_solvent: Annotated[
+        str, typer.Option(help="Refinement (short MD) solvent model: explicit or implicit.")
     ] = "explicit",
     implicit_solvent: Annotated[
         str, typer.Option(help="Implicit solvent model for minimization.")
@@ -89,6 +88,7 @@ def optimize(
             ligand_sdf=ligand_sdf,
             log_level=log_level.lower(),
             minimize_solvent=minimize_solvent,
+            refine_solvent=refine_solvent,
             implicit_solvent=implicit_solvent,
             minimize_max_iter=minimize_max_iter,
             temperature_k=temperature,

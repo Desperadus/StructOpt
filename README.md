@@ -60,6 +60,6 @@ uv run structopt optimize tests/data/geraniol_model_0.cif \
 ## Notes
 
 - Default cleanup adds hydrogens at pH `7.2`.
-- Minimization uses implicit solvent (`gbn2` or `obc2`).
+- Minimization uses explicit by default or possibly implicit solvent (`gbn2` or `obc2`).
 - MD refinement uses short explicit-solvent NPT by default.
 - For GAFF workflows, install AmberTools in your environment.

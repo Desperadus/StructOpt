@@ -7,7 +7,7 @@ name = "structopt"
 version = "0.1.0"
 description = "CLI tools for quick protein structure cleanup and optimization with OpenMM."
 readme = "README.md"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "StructOpt Contributors" }]
 dependencies = [

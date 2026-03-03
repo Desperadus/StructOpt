@@ -83,3 +83,76 @@ def test_cli_refine_solvent_implicit(monkeypatch):
     )
     assert result.exit_code == 0
     assert called["cfg"].refine_solvent == "implicit"
+
+
+def test_cli_optimize_batch_from_directory(monkeypatch, tmp_path):
+    (tmp_path / "a.cif").write_text("x", encoding="utf-8")
+    (tmp_path / "b.pdb").write_text("x", encoding="utf-8")
+    (tmp_path / "skip.txt").write_text("x", encoding="utf-8")
+    called = []
+
+    def fake_run(config):
+        called.append(config.input_path.name)
+        return type(
+            "Result",
+            (),
+            {
+                "output_path": Path(f"out_{config.input_path.name}.cif"),
+                "final_energy_kj_mol": -1.0,
+                "minimized_energy_kj_mol": -2.0,
+                "refined_energy_kj_mol": -1.0,
+                "post_refined_energy_kj_mol": None,
+            },
+        )()
+
+    monkeypatch.setattr("structopt.cli.run_optimization", fake_run)
+    result = runner.invoke(app, ["optimize", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert called == ["a.cif", "b.pdb"]
+
+
+def test_cli_optimize_batch_from_wildcard(monkeypatch, tmp_path):
+    (tmp_path / "a.cif").write_text("x", encoding="utf-8")
+    (tmp_path / "b.cif").write_text("x", encoding="utf-8")
+    called = []
+
+    def fake_run(config):
+        called.append(config.input_path.name)
+        return type(
+            "Result",
+            (),
+            {
+                "output_path": Path(f"out_{config.input_path.name}.cif"),
+                "final_energy_kj_mol": -1.0,
+                "minimized_energy_kj_mol": -2.0,
+                "refined_energy_kj_mol": -1.0,
+                "post_refined_energy_kj_mol": None,
+            },
+        )()
+
+    monkeypatch.setattr("structopt.cli.run_optimization", fake_run)
+    result = runner.invoke(app, ["optimize", str(tmp_path / "*.cif")])
+
+    assert result.exit_code == 0
+    assert called == ["a.cif", "b.cif"]
+
+
+def test_cli_optimize_batch_rejects_single_output_file(monkeypatch):
+    monkeypatch.setattr("structopt.cli.run_optimization", lambda _cfg: None)
+    result = runner.invoke(
+        app,
+        [
+            "optimize",
+            "tests/data/OBP5_model_0.cif",
+            "tests/data/geraniol_model_0.cif",
+            "--output",
+            "out.cif",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert (
+        "For batch optimization, --output must be omitted or point to a directory."
+        in result.stderr
+    )

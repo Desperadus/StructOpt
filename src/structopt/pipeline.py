@@ -52,15 +52,22 @@ def _modeller_from_state(state: object) -> object:
     return Modeller(state.topology, state.positions)
 
 
-def _strip_solvent_and_ions(topology: object, positions: object) -> tuple[object, object]:
+def _strip_solvent_and_ions(
+    topology: object,
+    positions: object,
+    residue_indices_to_strip: set[int] | frozenset[int] | None = None,
+) -> tuple[object, object]:
     from openmm.app import Modeller
 
     modeller = Modeller(topology, positions)
-    residues_to_strip = [
-        residue
-        for residue in modeller.topology.residues()
-        if residue.name.upper() in SOLVENT_ION_RESNAMES
-    ]
+    residues_to_strip = []
+    for residue_idx, residue in enumerate(modeller.topology.residues()):
+        if residue_indices_to_strip is not None:
+            if residue_idx not in residue_indices_to_strip:
+                continue
+        elif residue.name.upper() not in SOLVENT_ION_RESNAMES:
+            continue
+        residues_to_strip.append(residue)
     if residues_to_strip:
         LOGGER.info(
             "Stripping %d solvent/ion residues from output structure", len(residues_to_strip)
@@ -102,7 +109,11 @@ def run_optimization(config: OptimizationConfig) -> OptimizationResult:
             and config.refine_solvent == "implicit"
         ):
             LOGGER.info("Stripping explicit solvent/ions before implicit-solvent refinement")
-            dry_top, dry_pos = _strip_solvent_and_ions(minimized.topology, minimized.positions)
+            dry_top, dry_pos = _strip_solvent_and_ions(
+                minimized.topology,
+                minimized.positions,
+                getattr(minimized, "added_solvent_residue_indices", None),
+            )
             modeller = _modeller_from_state(
                 SimulationState(
                     topology=dry_top,
@@ -129,7 +140,11 @@ def run_optimization(config: OptimizationConfig) -> OptimizationResult:
         LOGGER.info(
             "Running post-refinement minimization (minimize_solvent=%s)", config.minimize_solvent
         )
-        dry_top, dry_pos = _strip_solvent_and_ions(final_state.topology, final_state.positions)
+        dry_top, dry_pos = _strip_solvent_and_ions(
+            final_state.topology,
+            final_state.positions,
+            getattr(final_state, "added_solvent_residue_indices", None),
+        )
         dry_modeller = _modeller_from_state(
             SimulationState(
                 topology=dry_top,
@@ -143,6 +158,7 @@ def run_optimization(config: OptimizationConfig) -> OptimizationResult:
     output_topology, output_positions = _strip_solvent_and_ions(
         final_state.topology,
         final_state.positions,
+        getattr(final_state, "added_solvent_residue_indices", None),
     )
     write_structure(output_path, output_topology, output_positions, output_format)
     LOGGER.info("Wrote optimized structure to: %s", output_path)

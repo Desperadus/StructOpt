@@ -57,6 +57,33 @@ def test_strip_solvent_and_ions_removes_water_and_ions(monkeypatch):
     assert stripped_positions is positions
 
 
+def test_strip_solvent_and_ions_can_target_only_new_solvent(monkeypatch):
+    openmm_module = ModuleType("openmm")
+    openmm_app_module = ModuleType("openmm.app")
+    openmm_app_module.Modeller = _FakeModeller
+    openmm_module.app = openmm_app_module
+    monkeypatch.setitem(sys.modules, "openmm", openmm_module)
+    monkeypatch.setitem(sys.modules, "openmm.app", openmm_app_module)
+
+    topology = _FakeTopology(
+        [
+            _FakeResidue("ALA"),
+            _FakeResidue("HOH"),  # pre-existing water that must remain
+            _FakeResidue("HOH"),  # newly added solvent water
+            _FakeResidue("NA"),  # newly added solvent ion
+            _FakeResidue("LIG"),
+        ]
+    )
+    positions = object()
+
+    stripped_topology, stripped_positions = _strip_solvent_and_ions(
+        topology, positions, residue_indices_to_strip={2, 3}
+    )
+
+    assert [residue.name for residue in stripped_topology.residues()] == ["ALA", "HOH", "LIG"]
+    assert stripped_positions is positions
+
+
 def test_run_optimization_writes_stripped_output(monkeypatch, tmp_path):
     cfg = OptimizationConfig(
         input_path=Path("tests/data/OBP5_model_0.cif"),
@@ -87,7 +114,10 @@ def test_run_optimization_writes_stripped_output(monkeypatch, tmp_path):
     monkeypatch.setattr("structopt.pipeline.prepare_structure", lambda _cfg: "prepared-modeller")
     monkeypatch.setattr(
         "structopt.pipeline._strip_solvent_and_ions",
-        lambda _topology, _positions: ("dry-topology", "dry-positions"),
+        lambda _topology, _positions, _residue_indices_to_strip=None: (
+            "dry-topology",
+            "dry-positions",
+        ),
     )
 
     written = {}
@@ -167,8 +197,8 @@ def test_run_optimization_strips_explicit_solvent_before_implicit_refine(monkeyp
 
     strip_calls = []
 
-    def fake_strip(topology, positions):
-        strip_calls.append((topology, positions))
+    def fake_strip(topology, positions, residue_indices_to_strip=None):
+        strip_calls.append((topology, positions, residue_indices_to_strip))
         return ("stripped-topology", "stripped-positions")
 
     monkeypatch.setattr("structopt.pipeline._strip_solvent_and_ions", fake_strip)
@@ -191,7 +221,9 @@ def test_run_optimization_strips_explicit_solvent_before_implicit_refine(monkeyp
     run_optimization(cfg)
 
     # strip must have been called at least once for the explicit→implicit handoff
-    assert any(call == ("solvated-topology", "solvated-positions") for call in strip_calls), (
+    assert any(
+        call[0] == "solvated-topology" and call[1] == "solvated-positions" for call in strip_calls
+    ), (
         "Expected solvent stripping between minimization and implicit refinement"
     )
 
@@ -257,7 +289,10 @@ def test_post_refinement_minimization_is_run_after_md(monkeypatch, tmp_path):
     monkeypatch.setattr("structopt.pipeline.prepare_structure", lambda _cfg: "prepared-modeller")
     monkeypatch.setattr(
         "structopt.pipeline._strip_solvent_and_ions",
-        lambda _topology, _positions: ("dry-topology", "dry-positions"),
+        lambda _topology, _positions, _residue_indices_to_strip=None: (
+            "dry-topology",
+            "dry-positions",
+        ),
     )
 
     openmm_module = ModuleType("openmm")
@@ -316,7 +351,10 @@ def test_post_refinement_minimization_not_run_for_minimize_only(monkeypatch, tmp
     monkeypatch.setattr("structopt.pipeline.prepare_structure", lambda _cfg: "prepared-modeller")
     monkeypatch.setattr(
         "structopt.pipeline._strip_solvent_and_ions",
-        lambda _topology, _positions: ("dry-topology", "dry-positions"),
+        lambda _topology, _positions, _residue_indices_to_strip=None: (
+            "dry-topology",
+            "dry-positions",
+        ),
     )
     monkeypatch.setattr("structopt.pipeline.write_structure", lambda *a, **kw: None)
 

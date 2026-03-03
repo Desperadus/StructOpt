@@ -26,6 +26,7 @@ class SimulationState:
     topology: object
     positions: unit.Quantity
     potential_energy_kj_mol: float
+    added_solvent_residue_indices: frozenset[int] = frozenset()
 
 
 WATER_RESNAMES = {"HOH", "WAT", "TIP3", "TIP3P", "SOL"}
@@ -83,18 +84,23 @@ def run_minimization(config: OptimizationConfig, modeller: Modeller) -> Simulati
         LOGGER.info("Adding any remaining hydrogens using registered force field templates")
         modeller.addHydrogens(ff, pH=config.ph)
 
+    added_solvent_residue_indices: frozenset[int] = frozenset()
     if config.minimize_solvent == "explicit":
         LOGGER.info(
             "Adding solvent for minimization (padding=%.3f nm, ionic_strength=%.3f M)",
             config.solvent_padding_nm,
             config.ionic_strength_molar,
         )
+        solvent_start_idx = modeller.topology.getNumResidues()
         modeller.addSolvent(
             ff,
             model="tip3p",
             padding=config.solvent_padding_nm * unit.nanometer,
             ionicStrength=config.ionic_strength_molar * unit.molar,
             neutralize=True,
+        )
+        added_solvent_residue_indices = frozenset(
+            range(solvent_start_idx, modeller.topology.getNumResidues())
         )
         LOGGER.info(
             "Creating minimization system with explicit solvent and cutoff=%.3f nm",
@@ -128,6 +134,7 @@ def run_minimization(config: OptimizationConfig, modeller: Modeller) -> Simulati
         topology=modeller.topology,
         positions=state.getPositions(),
         potential_energy_kj_mol=state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole),
+        added_solvent_residue_indices=added_solvent_residue_indices,
     )
 
 
@@ -145,6 +152,7 @@ def run_refinement_npt(config: OptimizationConfig, modeller: Modeller) -> Simula
         LOGGER.info("Adding any remaining hydrogens using registered force field templates")
         modeller.addHydrogens(ff, pH=config.ph)
 
+    added_solvent_residue_indices: frozenset[int] = frozenset()
     if config.refine_solvent == "explicit":
         if any(res.name in WATER_RESNAMES for res in modeller.topology.residues()):
             LOGGER.info(
@@ -156,12 +164,16 @@ def run_refinement_npt(config: OptimizationConfig, modeller: Modeller) -> Simula
                 config.solvent_padding_nm,
                 config.ionic_strength_molar,
             )
+            solvent_start_idx = modeller.topology.getNumResidues()
             modeller.addSolvent(
                 ff,
                 model="tip3p",
                 padding=config.solvent_padding_nm * unit.nanometer,
                 ionicStrength=config.ionic_strength_molar * unit.molar,
                 neutralize=True,
+            )
+            added_solvent_residue_indices = frozenset(
+                range(solvent_start_idx, modeller.topology.getNumResidues())
             )
         LOGGER.info(
             "Creating refinement system with explicit solvent and cutoff=%.3f nm",
@@ -218,4 +230,5 @@ def run_refinement_npt(config: OptimizationConfig, modeller: Modeller) -> Simula
         topology=modeller.topology,
         positions=state.getPositions(),
         potential_energy_kj_mol=state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole),
+        added_solvent_residue_indices=added_solvent_residue_indices,
     )

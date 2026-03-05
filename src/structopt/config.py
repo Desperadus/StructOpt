@@ -43,6 +43,7 @@ class OptimizationConfig(BaseModel):
     add_missing_residues: bool = False
     strip_heterogens: bool = False
     keep_water: bool = True
+    remove_h: bool = False
 
     @model_validator(mode="after")
     def check_input(self) -> "OptimizationConfig":

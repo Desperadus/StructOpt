@@ -102,6 +102,10 @@ def optimize(
         Path | None, typer.Option("--output", "-o", help="Output structure path.")
     ] = None,
     ph: Annotated[float, typer.Option(help="pH used to add hydrogens.")] = 7.2,
+    remove_h: Annotated[
+        bool,
+        typer.Option("--removeH", help="Strip hydrogens from saved output structure files."),
+    ] = False,
     ligand_name: Annotated[str, typer.Option(help="Ligand residue name in the topology.")] = "LIG1",
     ligand_sdf: Annotated[
         Path | None,
@@ -158,6 +162,7 @@ def optimize(
                 output_path=current_output,
                 mode=mode,
                 ph=ph,
+                remove_h=remove_h,
                 ligand_name=ligand_name,
                 ligand_sdf=ligand_sdf,
                 log_level=log_level.lower(),

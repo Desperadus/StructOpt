@@ -85,6 +85,30 @@ def test_cli_refine_solvent_implicit(monkeypatch):
     assert called["cfg"].refine_solvent == "implicit"
 
 
+def test_cli_remove_h_flag(monkeypatch):
+    called = {}
+
+    def fake_run(config):
+        called["cfg"] = config
+        return type(
+            "Result",
+            (),
+            {
+                "output_path": Path("out.cif"),
+                "final_energy_kj_mol": -1.0,
+                "minimized_energy_kj_mol": -2.0,
+                "refined_energy_kj_mol": -1.0,
+                "post_refined_energy_kj_mol": None,
+            },
+        )()
+
+    monkeypatch.setattr("structopt.cli.run_optimization", fake_run)
+    result = runner.invoke(app, ["optimize", "tests/data/OBP5_model_0.cif", "--removeH"])
+
+    assert result.exit_code == 0
+    assert called["cfg"].remove_h is True
+
+
 def test_cli_optimize_batch_from_directory(monkeypatch, tmp_path):
     (tmp_path / "a.cif").write_text("x", encoding="utf-8")
     (tmp_path / "b.pdb").write_text("x", encoding="utf-8")

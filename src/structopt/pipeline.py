@@ -76,6 +76,22 @@ def _strip_solvent_and_ions(
     return modeller.topology, modeller.positions
 
 
+def _strip_hydrogens(topology: object, positions: object) -> tuple[object, object]:
+    from openmm.app import Modeller
+
+    modeller = Modeller(topology, positions)
+    hydrogens_to_strip = []
+    for atom in modeller.topology.atoms():
+        element = getattr(atom, "element", None)
+        symbol = getattr(element, "symbol", "")
+        if symbol == "H":
+            hydrogens_to_strip.append(atom)
+    if hydrogens_to_strip:
+        LOGGER.info("Stripping %d hydrogens from output structure", len(hydrogens_to_strip))
+        modeller.delete(hydrogens_to_strip)
+    return modeller.topology, modeller.positions
+
+
 def run_optimization(config: OptimizationConfig) -> OptimizationResult:
     LOGGER.info("Validating input path: %s", config.input_path)
     validate_input_exists(config.input_path)
@@ -160,6 +176,8 @@ def run_optimization(config: OptimizationConfig) -> OptimizationResult:
         final_state.positions,
         getattr(final_state, "added_solvent_residue_indices", None),
     )
+    if config.remove_h:
+        output_topology, output_positions = _strip_hydrogens(output_topology, output_positions)
     write_structure(output_path, output_topology, output_positions, output_format)
     LOGGER.info("Wrote optimized structure to: %s", output_path)
 

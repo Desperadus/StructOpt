@@ -5,7 +5,7 @@ from pathlib import Path
 from types import ModuleType
 
 from structopt.config import OptimizationConfig
-from structopt.pipeline import _strip_solvent_and_ions, run_optimization
+from structopt.pipeline import _strip_hydrogens, _strip_solvent_and_ions, run_optimization
 
 
 class _FakeResidue:
@@ -13,12 +13,27 @@ class _FakeResidue:
         self.name = name
 
 
+class _FakeElement:
+    def __init__(self, symbol: str) -> None:
+        self.symbol = symbol
+
+
+class _FakeAtom:
+    def __init__(self, name: str, symbol: str) -> None:
+        self.name = name
+        self.element = _FakeElement(symbol)
+
+
 class _FakeTopology:
-    def __init__(self, residues: list[_FakeResidue]) -> None:
+    def __init__(self, residues: list[_FakeResidue], atoms: list[_FakeAtom] | None = None) -> None:
         self._residues = residues
+        self._atoms = atoms or []
 
     def residues(self):
         return iter(self._residues)
+
+    def atoms(self):
+        return iter(self._atoms)
 
 
 class _FakeModeller:
@@ -29,6 +44,9 @@ class _FakeModeller:
     def delete(self, residues_to_delete: list[_FakeResidue]) -> None:
         self.topology._residues = [
             residue for residue in self.topology._residues if residue not in residues_to_delete
+        ]
+        self.topology._atoms = [
+            atom for atom in self.topology._atoms if atom not in residues_to_delete
         ]
 
 
@@ -81,6 +99,31 @@ def test_strip_solvent_and_ions_can_target_only_new_solvent(monkeypatch):
     )
 
     assert [residue.name for residue in stripped_topology.residues()] == ["ALA", "HOH", "LIG"]
+    assert stripped_positions is positions
+
+
+def test_strip_hydrogens_removes_only_h_atoms(monkeypatch):
+    openmm_module = ModuleType("openmm")
+    openmm_app_module = ModuleType("openmm.app")
+    openmm_app_module.Modeller = _FakeModeller
+    openmm_module.app = openmm_app_module
+    monkeypatch.setitem(sys.modules, "openmm", openmm_module)
+    monkeypatch.setitem(sys.modules, "openmm.app", openmm_app_module)
+
+    topology = _FakeTopology(
+        [_FakeResidue("ALA")],
+        [
+            _FakeAtom("N", "N"),
+            _FakeAtom("H", "H"),
+            _FakeAtom("CA", "C"),
+            _FakeAtom("HA", "H"),
+        ],
+    )
+    positions = object()
+
+    stripped_topology, stripped_positions = _strip_hydrogens(topology, positions)
+
+    assert [atom.name for atom in stripped_topology.atoms()] == ["N", "CA"]
     assert stripped_positions is positions
 
 
@@ -137,6 +180,65 @@ def test_run_optimization_writes_stripped_output(monkeypatch, tmp_path):
     assert written["path"] == cfg.output_path
     assert written["topology"] == "dry-topology"
     assert written["positions"] == "dry-positions"
+    assert written["fmt"] == "cif"
+
+
+def test_run_optimization_can_strip_hydrogens_from_saved_output(monkeypatch, tmp_path):
+    cfg = OptimizationConfig(
+        input_path=Path("tests/data/OBP5_model_0.cif"),
+        output_path=tmp_path / "optimized.cif",
+        mode="minimize",
+        remove_h=True,
+    )
+
+    fake_state = type(
+        "State",
+        (),
+        {
+            "topology": "solvated-topology",
+            "positions": "solvated-positions",
+            "potential_energy_kj_mol": -12.3,
+        },
+    )()
+
+    fake_sim = ModuleType("structopt.sim")
+    fake_sim.run_minimization = lambda _cfg, _modeller: fake_state
+    fake_sim.run_refinement_npt = lambda _cfg, _modeller: (_cfg, _modeller)
+    fake_sim.SimulationState = type(
+        "SimulationState", (), {"__init__": lambda self, **kw: self.__dict__.update(kw)}
+    )
+    monkeypatch.setitem(sys.modules, "structopt.sim", fake_sim)
+
+    monkeypatch.setattr("structopt.pipeline.validate_input_exists", lambda _path: None)
+    monkeypatch.setattr("structopt.pipeline.detect_input_format", lambda _path: "cif")
+    monkeypatch.setattr("structopt.pipeline.prepare_structure", lambda _cfg: "prepared-modeller")
+    monkeypatch.setattr(
+        "structopt.pipeline._strip_solvent_and_ions",
+        lambda _topology, _positions, _residue_indices_to_strip=None: (
+            "dry-topology",
+            "dry-positions",
+        ),
+    )
+    monkeypatch.setattr(
+        "structopt.pipeline._strip_hydrogens",
+        lambda topology, positions: ("dehydrogenated-topology", "dehydrogenated-positions"),
+    )
+
+    written = {}
+
+    def _fake_write(path, topology, positions, fmt):
+        written["path"] = path
+        written["topology"] = topology
+        written["positions"] = positions
+        written["fmt"] = fmt
+
+    monkeypatch.setattr("structopt.pipeline.write_structure", _fake_write)
+
+    run_optimization(cfg)
+
+    assert written["path"] == cfg.output_path
+    assert written["topology"] == "dehydrogenated-topology"
+    assert written["positions"] == "dehydrogenated-positions"
     assert written["fmt"] == "cif"
 
 

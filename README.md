@@ -9,7 +9,20 @@ It combines:
 - Optional short MD refinement.
 - Optional GAFF small-molecule handling (for ligands like `LIG1`).
 
-## Install (uv)
+## Install
+
+Install from PyPI:
+
+```bash
+pip install structopt
+```
+
+If you want ligand/GAFF support, also install `openmmforcefields` in the same environment.
+Depending on your platform, it may be easier to use the provided mamba environment for that setup.
+
+## Install From Source
+
+Sync the project environment with `uv`:
 
 ```bash
 uv sync
@@ -21,9 +34,8 @@ To include dev tools:
 uv sync --group dev
 ```
 
-For GAFF ligand support, install `openmmforcefields`, `rdkit`, and AmberTools
-in the active environment.
-If your package index cannot resolve those, use mamba:
+For GAFF ligand support from source, install `openmmforcefields`, `rdkit`, and AmberTools
+in the active environment. If your package index cannot resolve those, use mamba:
 
 ```bash
 mamba env create -f environment.mamba.yml
